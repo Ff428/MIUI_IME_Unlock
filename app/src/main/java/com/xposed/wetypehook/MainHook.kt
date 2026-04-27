@@ -11,6 +11,7 @@ import android.view.View
 import android.inputmethodservice.InputMethodService
 import android.view.inputmethod.InputMethodManager
 import com.xposed.wetypehook.wetype.hook.WeTypeResourceHooks
+import com.xposed.wetypehook.wetype.hook.WeTypeUpdateHooks
 import com.xposed.wetypehook.wetype.hook.WeTypeWindowHooks
 import com.xposed.wetypehook.wetype.settings.WeTypeSettings
 import com.xposed.wetypehook.xposed.HookEnvironment
@@ -103,25 +104,30 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     }
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        if (PropertyUtils["ro.miui.support_miui_ime_bottom", "0"] != "1") return
-
         HookEnvironment.init(lpparam.classLoader, TAG)
-        Log.i("miuiime is supported")
+
+        val isMiuiImeSupport = PropertyUtils["ro.miui.support_miui_ime_bottom", "0"] == "1"
 
         if (lpparam.packageName == "android") {
-            startPermissionHook()
+            if (isMiuiImeSupport) {
+                startPermissionHook()
+            }
         } else {
-            startHook(lpparam)
+            startHook(lpparam, isMiuiImeSupport)
         }
     }
 
-    private fun startHook(lpparam: XC_LoadPackage.LoadPackageParam) {
+    private fun startHook(lpparam: XC_LoadPackage.LoadPackageParam, isMiuiImeSupport: Boolean) {
         val packageName = lpparam.packageName
         val isWeType = packageName == WETYPE_PACKAGE
 
         if (isWeType) {
             installWeTypeHooks(packageName)
         }
+
+        if (!isMiuiImeSupport) return
+
+        Log.i("miuiime is supported")
 
         val isNonCustomize = packageName !in miuiImeList
         if (isNonCustomize) {
@@ -146,11 +152,15 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         hookWeTypeTransparentColors()
         hookWeTypeXmlDrawables()
         hookWeTypeSelfDrawKeyColors()
+        hookWeTypeCandidateSpecialTextColor()
+        hookWeTypeCandidateBackgroundAlpha()
+        hookWeTypeCandidateBackgroundLeftMargin()
         hookWeTypeCandidateBackgroundCorner()
         hookWeTypeCandidatePinyinLeftMargin()
         hookWeTypeSettingKeyboardOpaqueBackground()
         hookWeTypeWindowBlur()
         hookWeTypeWindowCorner()
+        hookWeTypeDisableHotUpdate()
         hookWeTypeIntentEntry()
         hookWeTypeAboutLogoEntry()
     }
@@ -218,6 +228,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             name == "attach" && parameterTypes.sameAs(Context::class.java)
         }.hookAfter { param ->
             val context = param.args[0] as? Context ?: return@hookAfter
+            WeTypeSettings.ensureHostSnapshot(context)
             notifyActivationHeartbeat(context, sourcePackage)
         }
 
@@ -226,6 +237,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }.hookAfter { param ->
             val service = param.thisObject as? InputMethodService ?: return@hookAfter
             if (service.packageName != sourcePackage) return@hookAfter
+            WeTypeSettings.ensureHostSnapshot(service)
             notifyActivationHeartbeat(service, sourcePackage)
         }
     }
@@ -263,6 +275,18 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         WeTypeResourceHooks.hookSelfDrawKeyColors()
     }
 
+    private fun hookWeTypeCandidateSpecialTextColor() {
+        WeTypeResourceHooks.hookCandidateSpecialTextColor()
+    }
+
+    private fun hookWeTypeCandidateBackgroundAlpha() {
+        WeTypeResourceHooks.hookCandidateBackgroundAlpha()
+    }
+
+    private fun hookWeTypeCandidateBackgroundLeftMargin() {
+        WeTypeResourceHooks.hookCandidateBackgroundLeftMargin()
+    }
+
     private fun hookWeTypeCandidateBackgroundCorner() {
         WeTypeResourceHooks.hookCandidateBackgroundCorner()
     }
@@ -277,6 +301,10 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
     private fun hookWeTypeWindowCorner() {
         WeTypeWindowHooks.hookWindowCorner()
+    }
+
+    private fun hookWeTypeDisableHotUpdate() {
+        WeTypeUpdateHooks.hookDisableHotUpdate()
     }
 
     private fun hookWeTypeWindowBlur() {
